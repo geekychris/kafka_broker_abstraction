@@ -1,6 +1,6 @@
-package com.example.kafka.proxy.interceptors;
+package com.example.kafka.discovery.common.interceptors;
 
-import com.example.kafka.proxy.ProducerInterceptor;
+import com.example.kafka.discovery.common.ProducerInterceptor;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.slf4j.Logger;

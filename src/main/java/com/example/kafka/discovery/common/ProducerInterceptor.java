@@ -1,4 +1,4 @@
-package com.example.kafka.proxy;
+package com.example.kafka.discovery.common;
 
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;

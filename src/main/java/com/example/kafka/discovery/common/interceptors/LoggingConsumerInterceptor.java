@@ -1,6 +1,6 @@
-package com.example.kafka.proxy.interceptors;
+package com.example.kafka.discovery.common.interceptors;
 
-import com.example.kafka.proxy.ConsumerInterceptor;
+import com.example.kafka.discovery.common.ConsumerInterceptor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.slf4j.Logger;

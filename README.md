@@ -1,191 +1,353 @@
-# Kafka Proxy Client
+# Kafka Broker Discovery System
 
-A Java library that provides a proxy wrapper for Kafka clients, hiding the complexities of topic configuration while offering extensible interceptor capabilities for logging and message augmentation.
-
-## Features
-
-- **Metadata Service Integration**: Abstracts broker discovery and security configuration through a pluggable metadata service
-- **Security Configuration**: Supports PLAINTEXT, SSL, SASL_PLAINTEXT, and SASL_SSL with mutual authentication
-- **Interceptor Framework**: Extensible callback system for both producers and consumers
-- **Built-in Interceptors**: 
-  - Logging interceptor for comprehensive operation monitoring
-  - Message augmentation interceptor for adding metadata headers
-- **Thread-Safe**: Designed for concurrent usage in multi-threaded applications
+A Java library that provides automatic Kafka broker discovery and security configuration for Kafka producers and consumers. The system consists of a discovery server that provides broker metadata via REST APIs and a client library that uses this metadata to configure standard Kafka clients that communicate **directly** with Kafka brokers.
 
 ## Architecture
 
-The proxy client consists of several key components:
+The system is split into two main components:
 
-1. **KafkaMetadataService**: Interface for retrieving topic metadata including broker info and security config
-2. **KafkaProxyProducer/Consumer**: Wrapper classes that delegate to actual Kafka clients while providing interceptor support
-3. **Interceptor Framework**: Producer and consumer interceptors for extending functionality
-4. **Built-in Interceptors**: Ready-to-use implementations for common use cases
+### 🖥️ **Discovery Server**
+- Provides REST APIs for broker discovery and metadata lookup
+- Stores topic metadata including broker locations and security configurations
+- Supports multiple environments (dev, staging, production)
+- Health monitoring and administrative endpoints
+
+### 📱 **Discovery Client**
+- Looks up broker configurations and security settings from the discovery server
+- Creates standard Kafka producers/consumers that communicate **directly** with Kafka brokers
+- Supports interceptors for debugging and message augmentation
+- Automatically configures security settings (SSL, SASL, etc.)
+
+## Project Structure
+
+```
+src/main/java/com/example/kafka/discovery/
+├── server/                          # Discovery server components
+│   ├── BrokerDiscoveryService.java  # REST API service
+│   ├── TopicMetadataStore.java      # Metadata storage
+│   └── DiscoveryServerApplication.java  # Standalone server app
+├── client/                          # Discovery client components
+│   ├── KafkaDiscoveryClient.java    # Main client API
+│   ├── KafkaDiscoveryProducer.java  # Discovery-enabled producer wrapper
+│   ├── KafkaDiscoveryConsumer.java  # Discovery-enabled consumer wrapper
+│   ├── RestKafkaMetadataService.java # REST client implementation
+│   └── RestClientConfig.java        # REST client configuration
+├── common/                          # Shared components
+│   ├── TopicMetadata.java           # Topic metadata model
+│   ├── KafkaMetadataService.java    # Metadata service interface
+│   ├── ProducerInterceptor.java     # Producer interceptor interface
+│   ├── ConsumerInterceptor.java     # Consumer interceptor interface
+│   └── interceptors/                # Built-in interceptors
+└── examples/                        # Usage examples
+    └── FullIntegrationExample.java  # Complete demonstration
+```
 
 ## Quick Start
 
-### 1. Create a Metadata Service
+### 1. Start Local Kafka (Optional)
 
-```java
-// For development/testing
-StubKafkaMetadataService metadataService = new StubKafkaMetadataService();
+If you want to test with real Kafka:
 
-// Add custom topic metadata
-TopicMetadata myTopic = new TopicMetadata(
-    "my-topic",
-    List.of(
-        new TopicMetadata.BrokerInfo(1, "kafka1.example.com", 9092, true),
-        new TopicMetadata.BrokerInfo(2, "kafka2.example.com", 9092, false)
-    ),
-    TopicMetadata.SecurityConfig.ssl(
-        "/path/to/keystore.jks", "keystorepass",
-        "/path/to/truststore.jks", "truststorepass"
-    ),
-    Map.of("replication.factor", "2")
-);
-metadataService.addTopicMetadata(myTopic);
+```bash
+# Start Kafka using Docker Compose
+docker-compose up -d
+
+# Verify Kafka is running
+docker-compose ps
 ```
 
-### 2. Create a Proxy Producer
+This will start:
+- Kafka on `localhost:9092`
+- Kafka UI on `http://localhost:8081`
+- Pre-created topics: `dev-topic`, `prod-topic`, `staging-topic`
 
-```java
-Properties producerProps = new Properties();
-producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-producerProps.put(ProducerConfig.ACKS_CONFIG, "all");
+### 2. Run the Server Application
 
-KafkaProxyProducer<String, String> producer = new KafkaProxyProducer<>(
-    "my-topic", metadataService, producerProps);
+```bash
+# Start the discovery server
+mvn exec:java -Dexec.mainClass="com.example.kafka.discovery.server.DiscoveryServerApplication"
 
-// Register interceptors
-producer.registerInterceptor(new LoggingProducerInterceptor<>("my-producer", false));
-producer.registerInterceptor(new MessageAugmentationProducerInterceptor<>(
-    value -> "[PROCESSED] " + value, // Message transformer
-    true,  // Add timestamp
-    true,  // Add client ID
-    "my-app"
-));
-
-// Send messages
-producer.send(new ProducerRecord<>("my-topic", "key1", "Hello World!"));
-producer.close();
+# Or with custom port
+mvn exec:java -Dexec.mainClass="com.example.kafka.discovery.server.DiscoveryServerApplication" -Dexec.args="8080"
 ```
 
-### 3. Create a Proxy Consumer
+The server will start on port 8080 (or specified port) and provide these endpoints:
+- `GET /health` - Health check
+- `GET /api/topics` - List all topics
+- `GET /api/topics/{name}` - Get topic metadata
+- `GET /api/admin/stats` - Service statistics
 
-```java
-Properties consumerProps = new Properties();
-consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "my-group");
+### 3. Run the Full Integration Example
 
-KafkaProxyConsumer<String, String> consumer = new KafkaProxyConsumer<>(
-    "my-topic", metadataService, consumerProps);
-
-// Register interceptors
-consumer.registerInterceptor(new LoggingConsumerInterceptor<>("my-consumer", false));
-
-// Subscribe and poll
-consumer.subscribe(Collections.singletonList("my-topic"));
-ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(5));
-consumer.close();
+```bash
+# Run the comprehensive example
+mvn exec:java -Dexec.mainClass="com.example.kafka.examples.FullIntegrationExample"
 ```
 
-## Security Configuration
+This example demonstrates:
+✅ Starting the discovery service  
+✅ Creating a discovery client  
+✅ Automatic broker configuration retrieval  
+✅ Creating Kafka producers/consumers  
+✅ Message interceptors and debugging  
+✅ Error handling and cleanup  
 
-The proxy supports various security protocols:
+## Usage Examples
 
-### PLAINTEXT
+### Basic Client Usage
+
 ```java
-TopicMetadata.SecurityConfig.plaintext()
+// Create a discovery client
+KafkaDiscoveryClient client = new KafkaDiscoveryClient("http://localhost:8080");
+
+// Create a producer with automatic broker discovery
+// This looks up broker addresses and security config, then creates a standard Kafka producer
+KafkaDiscoveryProducer<String, String> producer = client.createProducer("my-topic");
+
+// Send messages normally - producer talks directly to Kafka brokers
+producer.send(new ProducerRecord<>("my-topic", "key", "value"));
+
+// Create a consumer with automatic broker discovery
+// This looks up broker addresses and security config, then creates a standard Kafka consumer
+KafkaDiscoveryConsumer<String, String> consumer = client.createConsumer("my-topic", "my-group");
+
+// Consume messages normally - consumer talks directly to Kafka brokers
+consumer.subscribe(Arrays.asList("my-topic"));
+ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
 ```
 
-### SSL with Mutual Authentication
+### With Debug Mode
+
 ```java
-TopicMetadata.SecurityConfig.ssl(
-    "/path/to/client.keystore.jks", "keystorePassword",
-    "/path/to/client.truststore.jks", "truststorePassword"
-);
+// Enable debug mode for detailed logging and interceptors
+KafkaDiscoveryClient client = new KafkaDiscoveryClient("http://localhost:8080", true);
+
+// Producers/consumers will automatically include:
+// - Logging interceptors for message tracking
+// - Message augmentation (timestamps, client IDs, etc.)
+// - Enhanced error reporting
 ```
 
-### Custom Security Configuration
+### Custom Configuration
+
 ```java
-new TopicMetadata.SecurityConfig(
-    SecurityProtocol.SASL_SSL,
-    keystorePath, keystorePassword,
-    truststorePath, truststorePassword,
-    "SCRAM-SHA-256",  // SASL mechanism
-    "username", "password",
-    Map.of("sasl.jaas.config", "...", "ssl.endpoint.identification.algorithm", "")
-);
+// Custom producer properties
+Properties props = new Properties();
+props.put(ProducerConfig.BATCH_SIZE_CONFIG, 32768);
+props.put(ProducerConfig.LINGER_MS_CONFIG, 5);
+
+KafkaDiscoveryProducer<String, String> producer = 
+    client.createProducer("my-topic", props);
 ```
 
-## Custom Interceptors
+### Standalone Server
 
-### Producer Interceptor
 ```java
-public class CustomProducerInterceptor<K, V> implements ProducerInterceptor<K, V> {
+// Start discovery server programmatically
+BrokerDiscoveryService server = new BrokerDiscoveryService(8080);
+server.start();
+
+// ... use the server ...
+
+server.stop();
+```
+
+## Configuration
+
+### Topic Metadata
+
+The system comes with pre-configured topic metadata for development:
+
+- **dev-topic**: Local Kafka (localhost:9092) with PLAINTEXT security
+- **prod-topic**: Production cluster with SSL security
+- **staging-topic**: Staging cluster with custom configuration
+
+### Security Configuration
+
+Topics can be configured with different security protocols:
+
+```java
+// PLAINTEXT (no security)
+SecurityConfig.plaintext()
+
+// SSL with mutual authentication
+SecurityConfig.ssl(
+    "/path/to/keystore.jks", "keystorepass",
+    "/path/to/truststore.jks", "truststorepass"
+)
+```
+
+### REST Client Configuration
+
+```java
+RestClientConfig config = RestClientConfig.builder()
+    .baseUrl("http://localhost:8080")
+    .connectTimeout(Duration.ofSeconds(5))
+    .readTimeout(Duration.ofSeconds(10))
+    .maxRetries(3)
+    .retryDelay(Duration.ofSeconds(1))
+    .build();
+```
+
+## API Endpoints
+
+### Discovery Service REST API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Service health check |
+| `/api/topics` | GET | List all available topics |
+| `/api/topics/{name}` | GET | Get metadata for specific topic |
+| `/api/topics` | POST | Create new topic metadata |
+| `/api/topics/{name}` | PUT | Update topic metadata |
+| `/api/topics/{name}` | DELETE | Delete topic metadata |
+| `/api/topics/{name}/refresh` | POST | Refresh topic metadata |
+| `/api/admin/topics` | GET | Get all topic metadata (admin) |
+| `/api/admin/topics` | DELETE | Clear all topics (admin) |
+| `/api/admin/stats` | GET | Service statistics |
+
+### Example API Response
+
+```json
+{
+  "topicName": "dev-topic",
+  "brokers": [
+    {
+      "id": 1,
+      "host": "localhost", 
+      "port": 9092,
+      "isController": true
+    }
+  ],
+  "securityConfig": {
+    "protocol": "PLAINTEXT",
+    "keystorePath": null,
+    "truststorePath": null,
+    "additionalSecurityProps": {}
+  },
+  "additionalProperties": {
+    "replication.factor": "3",
+    "min.insync.replicas": "2"
+  }
+}
+```
+
+## Interceptors
+
+The system includes built-in interceptors for debugging and monitoring:
+
+### Producer Interceptors
+- **LoggingProducerInterceptor**: Logs message sends and acknowledgments
+- **MessageAugmentationProducerInterceptor**: Adds metadata headers (timestamps, message IDs, client info)
+
+### Consumer Interceptors  
+- **LoggingConsumerInterceptor**: Logs consumed messages and commits
+
+### Custom Interceptors
+
+```java
+// Create custom producer interceptor
+public class MyInterceptor implements ProducerInterceptor<String, String> {
     @Override
-    public ProducerRecord<K, V> onSend(ProducerRecord<K, V> record) {
-        // Transform record before sending
+    public ProducerRecord<String, String> onSend(ProducerRecord<String, String> record) {
+        // Modify record before sending
         return record;
     }
     
     @Override
     public void onAcknowledgement(RecordMetadata metadata, Exception exception) {
-        // Handle acknowledgment or error
-    }
-    
-    @Override
-    public void close() {
-        // Cleanup resources
+        // Handle acknowledgment
     }
 }
+
+// Register with producer
+producer.registerInterceptor(new MyInterceptor());
 ```
 
-### Consumer Interceptor
-```java
-public class CustomConsumerInterceptor<K, V> implements ConsumerInterceptor<K, V> {
-    @Override
-    public ConsumerRecords<K, V> onConsume(ConsumerRecords<K, V> records) {
-        // Process records after polling
-        return records;
-    }
-    
-    @Override
-    public void onCommit(ConsumerRecords<K, V> records) {
-        // Handle commit events
-    }
-    
-    @Override
-    public void close() {
-        // Cleanup resources
-    }
-}
-```
+## Testing
 
-## Building and Testing
+### Unit Tests
 
-Build the project:
-```bash
-mvn clean compile
-```
-
-Run tests:
 ```bash
 mvn test
 ```
 
-Run the example:
+### Integration Tests
+
 ```bash
-mvn exec:java -Dexec.mainClass="com.example.kafka.proxy.KafkaProxyExample"
+# Start Kafka first
+docker-compose up -d
+
+# Run integration tests
+mvn -Dtest=BrokerDiscoveryIntegrationTest test
+
+# Run full example
+mvn exec:java -Dexec.mainClass="com.example.kafka.examples.FullIntegrationExample"
 ```
 
-## Requirements
+### Manual Testing
 
-- Java 21 or higher
-- Apache Kafka clients 3.7.0
-- SLF4J for logging
+```bash
+# Start discovery server
+mvn exec:java -Dexec.mainClass="com.example.kafka.discovery.server.DiscoveryServerApplication"
+
+# In another terminal, test the API
+curl http://localhost:8080/health
+curl http://localhost:8080/api/topics
+curl http://localhost:8080/api/topics/dev-topic
+```
+
+## Development
+
+### Requirements
+
+- Java 21+
+- Maven 3.6+
+- Docker (optional, for local Kafka)
+
+### Building
+
+```bash
+mvn clean compile
+```
+
+### Running Examples
+
+```bash
+# Full integration example
+mvn exec:java -Dexec.mainClass="com.example.kafka.examples.FullIntegrationExample"
+
+# Discovery server only
+mvn exec:java -Dexec.mainClass="com.example.kafka.discovery.server.DiscoveryServerApplication"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Port already in use**: Change the server port when starting:
+   ```bash
+   mvn exec:java -Dexec.mainClass="com.example.kafka.discovery.server.DiscoveryServerApplication" -Dexec.args="8081"
+   ```
+
+2. **Kafka connection refused**: Make sure Kafka is running:
+   ```bash
+   docker-compose up -d kafka
+   docker-compose ps
+   ```
+
+3. **Topic not found**: Check available topics:
+   ```bash
+   curl http://localhost:8080/api/topics
+   ```
+
+### Logs
+
+Enable debug logging by adding to your logback configuration:
+```xml
+<logger name="com.example.kafka.discovery" level="DEBUG"/>
+```
 
 ## License
 
-This project is provided as an example implementation. Adapt as needed for your specific requirements.
+This project is part of the Kafka proxy integration examples.

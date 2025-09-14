@@ -1,5 +1,8 @@
-package com.example.kafka.proxy;
+package com.example.kafka.discovery.client;
 
+import com.example.kafka.discovery.common.ConsumerInterceptor;
+import com.example.kafka.discovery.common.KafkaMetadataService;
+import com.example.kafka.discovery.common.TopicMetadata;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
@@ -14,23 +17,25 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
 /**
- * Proxy wrapper for Kafka Consumer that integrates with metadata service and supports interceptors.
+ * Discovery-enabled wrapper for Kafka Consumer that automatically configures broker connections and security.
+ * This class looks up topic metadata from the discovery service and creates a standard Kafka consumer
+ * that communicates directly with Kafka brokers.
  * 
  * @param <K> the key type
  * @param <V> the value type
  */
-public class KafkaProxyConsumer<K, V> implements Consumer<K, V> {
+public class KafkaDiscoveryConsumer<K, V> implements Consumer<K, V> {
     
-    private static final Logger logger = LoggerFactory.getLogger(KafkaProxyConsumer.class);
+    private static final Logger logger = LoggerFactory.getLogger(KafkaDiscoveryConsumer.class);
     
     private final Consumer<K, V> delegate;
     private final KafkaMetadataService metadataService;
     private final List<ConsumerInterceptor<K, V>> interceptors;
     private final String topicName;
     
-    public KafkaProxyConsumer(String topicName,
-                             KafkaMetadataService metadataService,
-                             Properties baseProperties) 
+    public KafkaDiscoveryConsumer(String topicName,
+                                 KafkaMetadataService metadataService,
+                                 Properties baseProperties) 
             throws KafkaMetadataService.MetadataServiceException {
         this.topicName = topicName;
         this.metadataService = metadataService;
@@ -44,7 +49,7 @@ public class KafkaProxyConsumer<K, V> implements Consumer<K, V> {
         Properties consumerProps = buildConsumerProperties(baseProperties, metadata);
         this.delegate = new KafkaConsumer<>(consumerProps);
         
-        logger.info("Created Kafka proxy consumer for topic: {}", topicName);
+        logger.info("Created Kafka discovery consumer for topic: {} with brokers discovered via metadata service", topicName);
     }
     
     /**
@@ -311,7 +316,7 @@ public class KafkaProxyConsumer<K, V> implements Consumer<K, V> {
     
     @Override
     public void close(Duration timeout) {
-        logger.info("Closing Kafka proxy consumer for topic: {}", topicName);
+        logger.info("Closing Kafka discovery consumer for topic: {}", topicName);
         
         // Close interceptors
         for (ConsumerInterceptor<K, V> interceptor : interceptors) {

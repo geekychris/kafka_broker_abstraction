@@ -1,4 +1,4 @@
-package com.example.kafka.proxy;
+package com.example.kafka.discovery.common;
 
 import java.util.Optional;
 
