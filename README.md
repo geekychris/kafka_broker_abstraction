@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Kafka Broker Abstraction logo" width="180">
+</p>
+
 # Kafka Broker Discovery System
 
 A Java library that provides automatic Kafka broker discovery and security configuration for Kafka producers and consumers. The system consists of a discovery server that provides broker metadata via REST APIs and a client library that uses this metadata to configure standard Kafka clients that communicate **directly** with Kafka brokers.
